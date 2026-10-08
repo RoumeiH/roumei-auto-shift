@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>指定假申請</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>">
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -53,11 +54,20 @@
   .pill { display:inline-block; background:#fee2e2; color:#b91c1c; border-radius:20px; padding:2px 10px; margin:2px 3px; font-size:12px; }
   .disclaimer { font-size:12px; color:#b45309; background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; padding:8px 10px; margin:12px 0 4px; line-height:1.5; }
   .foot { font-size:11px; color:#9ca3af; text-align:center; margin-top:18px; line-height:1.6; }
+  .langbar { display:flex; justify-content:flex-end; gap:6px; margin-bottom:8px; }
+  .langbar button { font-family:inherit; border:1px solid #d1d5db; background:#fff; color:#6b7280; border-radius:20px; padding:4px 12px; font-size:12px; cursor:pointer; }
+  .langbar button.active { background:#6366f1; color:#fff; border-color:#6366f1; font-weight:700; }
 </style>
 </head>
 <body>
-<div class="wrap" id="app">
-  <div class="loading" id="boot">載入中…</div>
+<div class="wrap">
+  <div class="langbar">
+    <button id="btnZh" class="active" onclick="setLang('zh')">中文·Indonesia</button>
+    <button id="btnEn" onclick="setLang('en')">English</button>
+  </div>
+  <div id="app">
+    <div class="loading" id="boot">載入中…</div>
+  </div>
 </div>
 
 <script>
@@ -79,6 +89,105 @@ const ANNUAL_MAX = 3;          // 年假每月上限(天)，不指定日期
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+
+// ── 多語系 ───────────────────────────────────────────
+const I18N = {
+  zh: {
+    dow: '日一二三四五六',
+    loading: '載入中…',
+    liffFail: e => 'LINE 初始化失敗 / Inisialisasi LINE gagal：' + e + '<br><br>請從 LINE 內開啟本頁面。<br>Silakan buka halaman ini dari dalam LINE.',
+    loadFail: e => '讀取資料失敗 / Gagal memuat data：' + e,
+    title: '指定假申請 / Pengajuan Cuti',
+    bindSub: '第一次使用，請選擇你的名字（只需一次）<br>Pemakaian pertama, pilih nama Anda (sekali saja)',
+    pickDefault: '— 請選擇你的名字 / Pilih nama Anda —',
+    confirmBind: '確認綁定 / Konfirmasi',
+    binding: '綁定中… / Menghubungkan…',
+    bindFoot: '綁定後系統會記住你，下次直接進入申請頁。<br>Setelah terhubung, sistem akan mengingat Anda.',
+    bindFail: e => '綁定失敗 / Gagal menghubungkan：' + e,
+    applicant: '申請人 / Pemohon：',
+    locked: '🔒 已由主管鎖定 / Dikunci oleh atasan',
+    rebindLink: '不是我？重新綁定 / Bukan saya? Hubungkan ulang',
+    rebindConfirm: name => `要清除目前綁定（${name}）並重新選擇名字嗎？\nHapus hubungan saat ini (${name}) dan pilih nama lagi?`,
+    monthLabel: '申請月份（可提前劃未來月份）/ Bulan pengajuan (boleh bulan mendatang)',
+    ym: (y,m) => `${y} 年 ${m+1} 月`,
+    deadline: lbl => `截止日 / Batas waktu：${lbl} 前送出`,
+    calHint: '點日期切換休假 · 藍字=同事已指定人數<br>Ketuk tanggal · Angka biru=jumlah rekan',
+    peerTitleAll: '👥 本月全部部門同事已指定 / Semua dept. bulan ini',
+    peerTitleDept: '👥 本月同部門同事已指定 / Rekan sedept. bulan ini',
+    statSun: '例假(日)<br>Minggu',
+    statSat: '休假(六)<br>Sabtu',
+    statGuo: '國定<br>Libur',
+    statTotal: '當月可休<br>Total',
+    noticeTitle: `📌 長假公告（畫「連休」滿 ${NOTICE_MIN_DAYS} 天(含)以上，請務必協調錯開）<br>Cuti panjang (≥ ${NOTICE_MIN_DAYS} hari berturut-turut, harap koordinasi)`,
+    daysN: n => `${n}天 / hari`,
+    selectedCount: ['已選 / Dipilih', '天 / hari'],
+    annualLabel: `年假（不指定日期，最多 ${ANNUAL_MAX} 天；由公司視人力安排）<br>Cuti tahunan (tanpa tanggal, maks ${ANNUAL_MAX} hari)`,
+    daysOpt: i => `${i} 天 / hari`,
+    disclaimer: '※ 送出僅代表「提出申請」，不代表准假；是否核准由主管視人力狀況決定。<br>Pengajuan ≠ disetujui; keputusan ada pada atasan.',
+    submit: '送出申請 / Kirim',
+    submitting: '送出中… / Mengirim…',
+    submitted: '✓ 已送出 / Terkirim',
+    submittedClose: '✓ 已送出，可關閉本頁 / Terkirim, boleh tutup',
+    submitFail: e => '送出失敗 / Gagal mengirim：' + e,
+    formFoot: `可重複開啟本頁修改後再送出（以最後一次為準）。<br>連休 ${NOTICE_MIN_DAYS} 天(含)以上會公告提醒同事。<br>Boleh dibuka ulang & kirim lagi (yang terakhir berlaku).`,
+    warn: cap => `⚠ 已超過建議 ${cap} 天，請確認是否已與同事協調 / Melebihi ${cap} hari, harap koordinasi`,
+    designatedHover: '已指定 / Dipilih：',
+    cancelConfirm: md => `取消原本已申請的 ${md}？\nBatalkan ${md} yang sudah diajukan?`,
+    clearConfirm: '未選任何日期、年假也是 0，將清除你這個月的申請，確定？\nTidak ada tanggal & cuti tahunan 0 — hapus pengajuan bulan ini?'
+  },
+  en: {
+    dow: 'SMTWTFS',
+    loading: 'Loading…',
+    liffFail: e => 'LINE init failed: ' + e + '<br><br>Please open this page from within LINE.',
+    loadFail: e => 'Failed to load data: ' + e,
+    title: 'Leave Request',
+    bindSub: 'First time here — please choose your name (once only)',
+    pickDefault: '— Choose your name —',
+    confirmBind: 'Confirm',
+    binding: 'Linking…',
+    bindFoot: 'Once linked, the system remembers you and goes straight to the form next time.',
+    bindFail: e => 'Linking failed: ' + e,
+    applicant: 'Applicant: ',
+    locked: '🔒 Locked by manager',
+    rebindLink: 'Not you? Re-link',
+    rebindConfirm: name => `Clear the current link (${name}) and choose a name again?`,
+    monthLabel: 'Request month (future months allowed)',
+    ym: (y,m) => `${y}-${pad(m+1)}`,
+    deadline: lbl => `Deadline: submit before ${lbl}`,
+    calHint: 'Tap a date to toggle leave · Blue number = coworkers already requested',
+    peerTitleAll: '👥 All departments this month',
+    peerTitleDept: '👥 Coworkers (same dept.) this month',
+    statSun: 'Sun off',
+    statSat: 'Sat off',
+    statGuo: 'Public',
+    statTotal: 'Total off',
+    noticeTitle: `📌 Long-leave notice (${NOTICE_MIN_DAYS}+ consecutive days — please coordinate)`,
+    daysN: n => `${n}d`,
+    selectedCount: ['Selected', 'day(s)'],
+    annualLabel: `Annual leave (no specific date, up to ${ANNUAL_MAX} days; subject to staffing)`,
+    daysOpt: i => `${i} day(s)`,
+    disclaimer: '※ Submitting only means "requesting"; approval depends on the manager and staffing.',
+    submit: 'Submit',
+    submitting: 'Submitting…',
+    submitted: '✓ Submitted',
+    submittedClose: '✓ Submitted — you may close this page',
+    submitFail: e => 'Submit failed: ' + e,
+    formFoot: `You can reopen this page, edit and resubmit (the latest one counts).<br>${NOTICE_MIN_DAYS}+ consecutive days will be announced to coworkers.`,
+    warn: cap => `⚠ Over the suggested ${cap} days — please confirm you've coordinated with coworkers`,
+    designatedHover: 'Requested: ',
+    cancelConfirm: md => `Cancel ${md} that was already requested?`,
+    clearConfirm: 'No dates selected and annual leave is 0 — this will clear your request for this month. Continue?'
+  }
+};
+let LANG = 'zh';
+const T = () => I18N[LANG];
+let currentView = () => {};
+function setLang(l){
+  LANG = l;
+  document.getElementById('btnZh').classList.toggle('active', l === 'zh');
+  document.getElementById('btnEn').classList.toggle('active', l === 'en');
+  currentView();
+}
 
 const pad = n => String(n).padStart(2, '0');
 const keyOf = (y,m) => `${y}-${pad(m+1)}`;
@@ -125,18 +234,21 @@ function showBoot(html, isErr){ $app.innerHTML = `<div class="${isErr?'msg err':
 (async function start(){
   try {
     await liff.init({ liffId: LIFF_ID });
+    try { if ((liff.getLanguage() || '').toLowerCase().startsWith('en')) setLang('en'); } catch(e){}
     if (!liff.isLoggedIn()) { liff.login(); return; }
     profile = await liff.getProfile();
   } catch (e) {
-    showBoot('LINE 初始化失敗：' + esc(e.message || e) + '<br><br>請從 LINE 內開啟本頁面。', true);
+    showBoot(T().liffFail(esc(e.message || e)), true);
     return;
   }
   try {
-    const snap = await db.collection('config').doc('main').get();
+    const [snap, bind] = await Promise.all([
+      db.collection('config').doc('main').get(),
+      db.collection('lineBindings').doc(profile.userId).get()
+    ]);
     const d = snap.exists ? snap.data() : {};
     employees = (d.employees || []).filter(e => e.active !== false);
     rules = d.rules || {};
-    const bind = await db.collection('lineBindings').doc(profile.userId).get();
     if (bind.exists && bind.data().empId && employees.some(e => e.id === bind.data().empId)) {
       empId = bind.data().empId;
       empName = nameOf(empId);
@@ -146,7 +258,7 @@ function showBoot(html, isErr){ $app.innerHTML = `<div class="${isErr?'msg err':
       renderBind();
     }
   } catch (e) {
-    showBoot('讀取資料失敗：' + esc(e.message || e), true);
+    showBoot(T().loadFail(esc(e.message || e)), true);
   }
 })();
 
@@ -214,22 +326,23 @@ async function loadAllNotices(){
 
 // ── 綁定畫面（第一次使用選自己是誰）──────────────────
 function renderBind(){
+  currentView = renderBind;
   const opts = employees.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
   $app.innerHTML = `
-    <h1>指定假申請</h1>
-    <div class="sub">第一次使用，請選擇你的名字（只需一次）</div>
+    <h1>${T().title}</h1>
+    <div class="sub">${T().bindSub}</div>
     <div class="card">
       <div class="who">LINE：<b>${esc(profile.displayName)}</b></div>
       <select class="name-select" id="pick">
-        <option value="">— 請選擇你的名字 —</option>${opts}
+        <option value="">${T().pickDefault}</option>${opts}
       </select>
-      <button class="btn" id="bindBtn" style="margin-top:12px" disabled>確認綁定</button>
+      <button class="btn" id="bindBtn" style="margin-top:12px" disabled>${T().confirmBind}</button>
     </div>
-    <div class="foot">綁定後系統會記住你，下次直接進入申請頁。</div>`;
+    <div class="foot">${T().bindFoot}</div>`;
   const pick = document.getElementById('pick'), btn = document.getElementById('bindBtn');
   pick.onchange = () => btn.disabled = !pick.value;
   btn.onclick = async () => {
-    btn.disabled = true; btn.textContent = '綁定中…';
+    btn.disabled = true; btn.textContent = T().binding;
     try {
       empId = pick.value; empName = nameOf(empId);
       await db.collection('lineBindings').doc(profile.userId).set({
@@ -237,7 +350,7 @@ function renderBind(){
         boundAt: new Date().toISOString()
       });
       await enterForm();
-    } catch(e){ btn.disabled=false; btn.textContent='確認綁定'; alert('綁定失敗：'+(e.message||e)); }
+    } catch(e){ btn.disabled=false; btn.textContent=T().confirmBind; alert(T().bindFail(e.message||e)); }
   };
 }
 
@@ -251,39 +364,40 @@ async function enterForm(){
 }
 
 function renderForm(months){
+  currentView = () => renderForm(months);
   const announce = (rules.announcement || '').trim();
   const monthOpts = months.map(o =>
-    `<option value="${o.y}-${o.m}" ${o.y===CY&&o.m===CM?'selected':''}>${o.y} 年 ${o.m+1} 月</option>`
+    `<option value="${o.y}-${o.m}" ${o.y===CY&&o.m===CM?'selected':''}>${T().ym(o.y,o.m)}</option>`
   ).join('');
   $app.innerHTML = `
-    <h1>指定假申請</h1>
-    <div class="sub">申請人：<b>${esc(empName)}</b> <span style="color:#9ca3af;font-size:12px">(${esc(profile.displayName)})</span>
-      ${bindLocked ? '<span style="color:#9ca3af;font-size:12px;margin-left:6px">🔒 已由主管鎖定</span>' : '<a id="rebindLink" style="color:#6366f1;font-size:12px;margin-left:6px;cursor:pointer;text-decoration:underline">不是我？重新綁定</a>'}</div>
+    <h1>${T().title}</h1>
+    <div class="sub">${T().applicant}<b>${esc(empName)}</b> <span style="color:#9ca3af;font-size:12px">(${esc(profile.displayName)})</span>
+      ${bindLocked ? `<span style="color:#9ca3af;font-size:12px;margin-left:6px">${T().locked}</span>` : `<a id="rebindLink" style="color:#6366f1;font-size:12px;margin-left:6px;cursor:pointer;text-decoration:underline">${T().rebindLink}</a>`}</div>
     ${announce ? `<div class="announce">📢 ${esc(announce)}</div>` : ''}
     <div id="noticeBox"></div>
     <div id="statBox"></div>
     <div class="card">
       <div class="month-row">
-        <label>申請月份（可提前劃未來月份）</label>
+        <label>${T().monthLabel}</label>
         <select class="month-select" id="monthSel">${monthOpts}</select>
         <div class="deadline" id="deadline"></div>
       </div>
-      <div class="cal-head"><div class="cal-title" id="calTitle"></div><div style="font-size:12px;color:#9ca3af">點日期切換休假 · 藍字=同事已指定人數（下方列出是誰）</div></div>
+      <div class="cal-head"><div class="cal-title" id="calTitle"></div><div style="font-size:12px;color:#9ca3af">${T().calHint}</div></div>
       <div class="grid" id="cal"></div>
       <div id="peerList"></div>
-      <div class="count">已選 <b id="cnt">0</b> 天</div>
+      <div class="count">${T().selectedCount[0]} <b id="cnt">0</b> ${T().selectedCount[1]}</div>
       <div class="warn" id="warn"></div>
       <div class="selected-list" id="sellist"></div>
       <div class="month-row" style="margin-top:14px;border-top:1px solid #f0f0f0;padding-top:12px">
-        <label>年假（不指定日期，最多 ${ANNUAL_MAX} 天；由公司視人力安排）</label>
+        <label>${T().annualLabel}</label>
         <select class="month-select" id="annualSel">${
-          Array.from({length: ANNUAL_MAX + 1}, (_, i) => `<option value="${i}">${i} 天</option>`).join('')
+          Array.from({length: ANNUAL_MAX + 1}, (_, i) => `<option value="${i}">${T().daysOpt(i)}</option>`).join('')
         }</select>
       </div>
-      <div class="disclaimer">※ 送出僅代表「提出申請」，不代表准假；是否核准由主管視人力狀況決定。</div>
-      <button class="btn" id="submit">送出申請</button>
+      <div class="disclaimer">${T().disclaimer}</div>
+      <button class="btn" id="submit">${T().submit}</button>
     </div>
-    <div class="foot">可重複開啟本頁修改後再送出（以最後一次為準）。<br>連休 ${NOTICE_MIN_DAYS} 天(含)以上會公告提醒同事。</div>`;
+    <div class="foot">${T().formFoot}</div>`;
   document.getElementById('monthSel').onchange = async (e) => {
     const [y,m] = e.target.value.split('-').map(Number);
     CY = y; CM = m;
@@ -298,7 +412,7 @@ function renderForm(months){
 
 // 重新綁定：清除目前綁定，回到選名字畫面
 async function rebind(){
-  if (!confirm(`要清除目前綁定（${empName}）並重新選擇名字嗎？`)) return;
+  if (!confirm(T().rebindConfirm(empName))) return;
   try { await db.collection('lineBindings').doc(profile.userId).delete(); } catch(e){ /* 忽略 */ }
   empId = null; empName = null;
   renderBind();
@@ -306,8 +420,8 @@ async function rebind(){
 
 // 重繪月曆 + 公告 + 計數（切換月份後呼叫）
 function rebuild(){
-  document.getElementById('calTitle').textContent = `${CY} 年 ${CM+1} 月`;
-  document.getElementById('deadline').textContent = `截止日：${deadlineLabel(CY,CM)} 前送出`;
+  document.getElementById('calTitle').textContent = T().ym(CY,CM);
+  document.getElementById('deadline').textContent = T().deadline(deadlineLabel(CY,CM));
   renderNotice();
   renderStat();
   buildCalendar();
@@ -323,10 +437,10 @@ function renderPeerList(){
   const days = Object.keys(dayPeers).map(Number).sort((a,b)=>a-b);
   if (!days.length){ box.innerHTML = ''; return; }
   const items = days.map(d =>
-    `<div style="padding:1px 0"><b style="color:#3b82f6">${CM+1}/${d}</b>（${DOW[new Date(CY,CM,d).getDay()]}）：${dayPeers[d].names.map(esc).join('、')}</div>`
+    `<div style="padding:1px 0"><b style="color:#3b82f6">${CM+1}/${d}</b>（${T().dow[new Date(CY,CM,d).getDay()]}）：${dayPeers[d].names.map(esc).join('、')}</div>`
   ).join('');
   box.innerHTML = `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:12px;line-height:1.7;color:#1e40af">
-    <div style="font-weight:700;margin-bottom:4px">👥 本月${peerScopeAll ? '全部部門' : '同部門'}同事已指定</div>${items}</div>`;
+    <div style="font-weight:700;margin-bottom:4px">${peerScopeAll ? T().peerTitleAll : T().peerTitleDept}</div>${items}</div>`;
 }
 
 // 本月可休統計：例假(週日數) + 休假(週六數) + 國定(主管已套用給本人) = 當月可休合計
@@ -339,10 +453,10 @@ function renderStat(){
   const total = sun + sat + myGuo;
   const cell = (k, v, c) => `<div style="flex:1;text-align:center;padding:8px 2px"><div style="font-size:11px;color:#6b7280">${k}</div><div style="font-size:20px;font-weight:800;color:${c}">${v}</div></div>`;
   box.innerHTML = `<div class="card" style="display:flex;gap:2px;padding:8px;margin-bottom:12px">
-    ${cell('例假(日)', sun, '#e11d48')}
-    ${cell('休假(六)', sat, '#d97706')}
-    ${cell('國定', myGuo, '#7c3aed')}
-    ${cell('當月可休', total, '#15803d')}
+    ${cell(T().statSun, sun, '#e11d48')}
+    ${cell(T().statSat, sat, '#d97706')}
+    ${cell(T().statGuo, myGuo, '#7c3aed')}
+    ${cell(T().statTotal, total, '#15803d')}
   </div>`;
 }
 
@@ -353,16 +467,16 @@ function renderNotice(){
     const items = g.reqs.slice().sort((a,b)=>(a.dates[0]||'').localeCompare(b.dates[0]||''))
       .map(r => {
         const ds = (r.dates||[]).slice().sort().map(dt => `${parseInt(dt.slice(5,7),10)}/${parseInt(dt.slice(8,10),10)}`).join('、');
-        return `<div>・<b>${esc(nameOf(r.empId))}</b>：${ds}（${r.dates.length}天）</div>`;
+        return `<div>・<b>${esc(nameOf(r.empId))}</b>：${ds}（${T().daysN(r.dates.length)}）</div>`;
       }).join('');
-    return `<div style="margin-top:6px"><u>${g.y} 年 ${g.m+1} 月</u>${items}</div>`;
+    return `<div style="margin-top:6px"><u>${T().ym(g.y,g.m)}</u>${items}</div>`;
   }).join('');
-  box.innerHTML = `<div class="notice"><span class="hd">📌 長假公告（畫「連休」滿 ${NOTICE_MIN_DAYS} 天(含)以上，請務必協調錯開）</span>${groups}</div>`;
+  box.innerHTML = `<div class="notice"><span class="hd">${T().noticeTitle}</span>${groups}</div>`;
 }
 
 function buildCalendar(){
   const cal = document.getElementById('cal');
-  const dows = DOW.split('');
+  const dows = T().dow.split('');
   cal.innerHTML = dows.map((w,i)=>`<div class="dow ${i===0?'sun':i===6?'sat':''}">${w}</div>`).join('');
   const firstDow = new Date(CY, CM, 1).getDay();
   for (let i=0;i<firstDow;i++) cal.insertAdjacentHTML('beforeend','<div class="cell empty"></div>');
@@ -373,13 +487,13 @@ function buildCalendar(){
     const el = document.createElement('div');
     el.className = `cell ${cls}`;
     const peer = dayPeers[d];
-    el.title = peer ? ('已指定：' + peer.names.join('、')) : '';
+    el.title = peer ? (T().designatedHover + peer.names.join('、')) : '';
     el.innerHTML = `${d}${peer ? `<span class="peer">${peer.count}</span>` : ''}`;
     el.dataset.d = d;
     el.onclick = () => {
       if (selected.has(d)) {
         // 防呆：取消「原本已送出」的日期時先確認，避免手殘刪掉
-        if (submittedDates.has(d) && !confirm(`取消原本已申請的 ${CM+1}/${d}？`)) return;
+        if (submittedDates.has(d) && !confirm(T().cancelConfirm(`${CM+1}/${d}`))) return;
         selected.delete(d);
       } else {
         selected.add(d);
@@ -396,16 +510,16 @@ function refresh(){
   });
   document.getElementById('cnt').textContent = selected.size;
   const warn = document.getElementById('warn');
-  warn.textContent = selected.size > SOFT_CAP ? `⚠ 已超過建議 ${SOFT_CAP} 天，請確認是否已與同事協調` : '';
+  warn.textContent = selected.size > SOFT_CAP ? T().warn(SOFT_CAP) : '';
   const list = [...selected].sort((a,b)=>a-b)
-    .map(d => `<span class="pill">${CM+1}/${d}（${DOW[new Date(CY,CM,d).getDay()]}）</span>`).join('');
+    .map(d => `<span class="pill">${CM+1}/${d}（${T().dow[new Date(CY,CM,d).getDay()]}）</span>`).join('');
   document.getElementById('sellist').innerHTML = list;
 }
 
 async function submit(){
   const btn = document.getElementById('submit');
-  if (selected.size === 0 && annualDays === 0 && !confirm('未選任何日期、年假也是 0，將清除你這個月的申請，確定？')) return;
-  btn.disabled = true; btn.textContent = '送出中…';
+  if (selected.size === 0 && annualDays === 0 && !confirm(T().clearConfirm)) return;
+  btn.disabled = true; btn.textContent = T().submitting;
   try {
     const ref = db.collection('leaveRequests').doc(keyOf(CY,CM));
     await db.runTransaction(async tx => {
@@ -435,14 +549,14 @@ async function submit(){
       }
       tx.set(ref, { requests: reqs });
     });
-    btn.className = 'btn ok'; btn.textContent = '✓ 已送出';
+    btn.className = 'btn ok'; btn.textContent = T().submitted;
     setTimeout(() => {
       if (liff.isInClient()) liff.closeWindow();
-      else btn.textContent = '✓ 已送出，可關閉本頁';
+      else btn.textContent = T().submittedClose;
     }, 900);
   } catch(e){
-    btn.disabled = false; btn.className = 'btn'; btn.textContent = '送出申請';
-    alert('送出失敗：' + (e.message || e));
+    btn.disabled = false; btn.className = 'btn'; btn.textContent = T().submit;
+    alert(T().submitFail(e.message || e));
   }
 }
 </script>
